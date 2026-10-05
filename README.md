@@ -47,3 +47,20 @@ The migrations add the consultation/session, message, profile, and WebRTC signal
 ## Vercel
 
 Connect the GitHub repository to Vercel, add the two public Supabase environment variables to the appropriate deployment environments, and redeploy. After deployment, visit `/api/supabase-health` to confirm the application can initialize its Supabase client.
+
+
+## Phone and push notifications
+
+Session requests can alert the provider by SMS, an automated Twilio voice call, and browser push notification. Configure these server-side environment variables in Vercel (never commit them):
+
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_PHONE_NUMBER` — your Twilio number
+- `SUPABASE_SERVICE_ROLE_KEY` — server-only Supabase service-role key
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY`
+- `VAPID_SUBJECT` — e.g. `mailto:you@example.com`
+
+The provider enters their cellphone in **Provider Console → Phone Alerts** using E.164 format and can enable/disable SMS and voice alerts. The provider can also enable push on the phone/browser used for the console.
+
+For iPhone web push, the site should be added to the Home Screen and notification permission must be granted. SMS and voice remain the cellular fallback.

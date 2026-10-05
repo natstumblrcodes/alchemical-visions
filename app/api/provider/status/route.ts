@@ -12,7 +12,7 @@ export async function POST(request: Request) {
 
   const { error } = await supabase.from("profiles").update({
     is_online: Boolean(online),
-    accepting_sessions: Boolean(accepting),
+    accepting_sessions: Boolean(online) && Boolean(accepting),
     last_seen_at: new Date().toISOString(),
   }).eq("id", user.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

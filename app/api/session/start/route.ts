@@ -84,5 +84,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: eventError.message }, { status: 500 });
   }
 
-  // Notifications are deliberately best-effort: a Twilio outage must not prevent the session request from being created.\n  try {\n    const { notifyProviderOfSession } = await import("@/lib/session-notifications");\n    await notifyProviderOfSession(session.id);\n  } catch {}\n\n  return NextResponse.json({ session }, { status: 201 });
+  // Notifications are deliberately best-effort: a Twilio outage must not prevent the session request from being created.
+  try {
+    const { notifyProviderOfSession } = await import("@/lib/session-notifications");
+    await notifyProviderOfSession(session.id);
+  } catch {}
+
+  return NextResponse.json({ session }, { status: 201 });
 }

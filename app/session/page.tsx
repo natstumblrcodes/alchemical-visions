@@ -29,11 +29,19 @@ export default function SessionPage() {
 
   useEffect(() => {
     supabase.from("profiles").select("id,display_name,is_online,accepting_sessions").eq("role", "provider").limit(1).maybeSingle()
-      .then(({ data, error }) => { if (error) setError(error.message); else setProvider(data); });
+      .then(async ({ data, error }) => {
+        if (error) return setError(error.message);
+        if (!data) return setProvider(null);
+        const { data: pricing } = await supabase.from("provider_profiles").select("price_per_minute").eq("user_id", data.id).maybeSingle();
+        setProvider({ ...data, price_per_minute: Number(pricing?.price_per_minute ?? 2.99) });
+      });
   }, [supabase]);
 
   useEffect(() => {
-    if (!session?.started_at) return;
+    if (!session?.started_at || session.status !== "active") {
+      setElapsed(0);
+      return;
+    }
     const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - new Date(session.started_at).getTime()) / 1000)));
     tick();
     const id = window.setInterval(tick, 1000);
@@ -41,7 +49,16 @@ export default function SessionPage() {
   }, [session?.started_at]);
 
   useEffect(() => {
-    if (!session || mode !== "chat" || !conversation) return;
+    if (!session) return;
+    const channel = supabase.channel("session-" + session.id)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "communication_sessions", filter: "id=eq." + session.id },
+        payload => setSession(payload.new as typeof session))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase, session?.id]);
+
+  useEffect(() => {
+    if (!session || session.status !== "active" || mode !== "chat" || !conversation) return;
     const channel = supabase.channel("conversation-" + conversation.id)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: "conversation_id=eq." + conversation.id }, payload => {
         setMessages(current => current.some(m => m.id === payload.new.id) ? current : [...current, payload.new]);
@@ -114,5 +131,6 @@ export default function SessionPage() {
   const price = Number(provider?.price_per_minute ?? 2.99);
   const total = Math.round((elapsed / 60) * price * 100) / 100;
 
-  return <main className="app-shell"><header className="header"><div className="brand-mark">☾<span>✦</span></div><div className="brand">ALCHEMICAL<br/><b>VISIONS</b></div><div className="status"><span className={provider?.is_online ? "dot online" : "dot"}/>{provider?.is_online ? "Online" : "Offline"}</div><div className="balance"><strong>${total.toFixed(2)}</strong><span>{clock(elapsed)}</span><small>Current Session</small></div></header><div className="tabs"><button className={mode==="chat" ? "tab active" : "tab"} onClick={() => setMode("chat")}>▤ Text Chat</button><button className={mode==="video" ? "tab active" : "tab"} onClick={() => setMode("video")}>◼ Video Chat</button><button className={mode==="audio" ? "tab active" : "tab"} onClick={() => setMode("audio")}>☎ Audio Call</button></div><section className="main-panel"><div className="chat-window">{!session && <><h2>Live Consultation</h2><p>{provider?.is_online && provider?.accepting_sessions ? "Natalie is available." : "Natalie is currently unavailable."}</p><p>Rate: <strong>${price.toFixed(2)} per minute</strong></p><button className="gold-button" disabled={busy || !provider?.is_online || !provider?.accepting_sessions} onClick={begin}>✦ Begin {mode === "chat" ? "Chat" : mode === "audio" ? "Audio Call" : "Video Call"} ✦</button></>}{session && <>{mode !== "chat" && <div className="call-panel"><div className={mode === "audio" ? "phone-orb" : "video-avatar"}>{mode === "audio" ? "☎" : "●"}</div><div className="call-status">{session.status === "ended" ? "Session Ended" : "Connected Session"}</div><div className="timer">{clock(elapsed)}</div></div>}{mode === "chat" && <div>{messages.map(m => <p key={m.id}><b>{m.sender_id === user.id ? "You" : "Natalie"}:</b> {m.body}</p>)}</div>}{session.status !== "ended" && <button className="end-call" disabled={busy} onClick={endSession}>☎ End Session</button>}{session.status === "ended" && <p><strong>Final session total: ${Number(session.subtotal).toFixed(2)}</strong></p>}</>}</div>{session?.status !== "ended" && mode === "chat" && <div className="message-row"><input value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => { if (e.key === "Enter") sendMessage(); }} placeholder="Type a message..."/><button className="round" onClick={sendMessage}>➤</button></div>}</section>{error && <p role="alert">{error}</p>}</main>;
+  return <main className="app-shell"><header className="header"><div className="brand-mark">☾<span>✦</span></div><div className="brand">ALCHEMICAL<br/><b>VISIONS</b></div><div className="status"><span className={provider?.is_online ? "dot online" : "dot"}/>{provider?.is_online ? "Online" : "Offline"}</div><div className="balance"><strong>${total.toFixed(2)}</strong><span>{clock(elapsed)}</span><small>Current Session</small></div></header><div className="tabs"><button className={mode==="chat" ? "tab active" : "tab"} onClick={() => setMode("chat")}>▤ Text Chat</button><button className={mode==="video" ? "tab active" : "tab"} onClick={() => setMode("video")}>◼ Video Chat</button><button className={mode==="audio" ? "tab active" : "tab"} onClick={() => setMode("audio")}>☎ Audio Call</button></div><section className="main-panel"><div className="chat-window">{!session && <><h2>Live Consultation</h2><p>{provider?.is_online && provider?.accepting_sessions ? "Natalie is available." : "Natalie is currently unavailable."}</p><p>Rate: <strong>${price.toFixed(2)} per minute</strong></p><button className="gold-button" disabled={busy || !provider?.is_online || !provider?.accepting_sessions} onClick={begin}>✦ Begin {mode === "chat" ? "Chat" : mode === "audio" ? "Audio Call" : "Video Call"} ✦</button></>}{session?.status === "pending" && <div className="sky"><div className="stars">✦ · ☾ · ✦</div><div className="wait">✧</div><h2>Waiting for your reader</h2><p>Your request has been sent. The session timer will begin only after it is accepted.</p></div>}
+        {session?.status === "active" && <>{mode !== "chat" && <div className="call-panel"><div className={mode === "audio" ? "phone-orb" : "video-avatar"}>{mode === "audio" ? "☎" : "●"}</div><div className="call-status">{session.status === "ended" ? "Session Ended" : "Connected Session"}</div><div className="timer">{clock(elapsed)}</div></div>}{mode === "chat" && <div>{messages.map(m => <p key={m.id}><b>{m.sender_id === user.id ? "You" : "Natalie"}:</b> {m.body}</p>)}</div>}{session && ["accepted","active"].includes(session.status) && <button className="end-call" disabled={busy} onClick={endSession}>☎ End Session</button>}{session?.status === "ended" && <p><strong>Final session total: ${Number(session.subtotal).toFixed(2)}</strong></p>}</>}</div>{session?.status === "active" && mode === "chat" && <div className="message-row"><input value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => { if (e.key === "Enter") sendMessage(); }} placeholder="Type a message..."/><button className="round" onClick={sendMessage}>➤</button></div>}</section>{error && <p role="alert">{error}</p>}</main>;
 }

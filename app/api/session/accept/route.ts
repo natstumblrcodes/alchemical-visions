@@ -21,6 +21,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Session ID is required." }, { status: 400 });
   }
 
+  const { data: providerProfile } = await supabase.from("profiles").select("role,is_online,accepting_sessions").eq("id", user.id).single();
+  if (!providerProfile || !["provider", "admin"].includes(providerProfile.role)) {
+    return NextResponse.json({ error: "Provider access required." }, { status: 403 });
+  }
+  if (!providerProfile.is_online || !providerProfile.accepting_sessions) {
+    return NextResponse.json({ error: "Set your provider status to online and accepting before accepting sessions." }, { status: 409 });
+  }
+
   const { data: session } = await supabase
     .from("communication_sessions")
     .select("*")

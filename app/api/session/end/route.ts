@@ -36,7 +36,14 @@ export async function POST(request: Request) {
   const endedAt = new Date();
   const startedAt = session.started_at ? new Date(session.started_at) : endedAt;
   const durationSeconds = Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000));
-  const subtotal = Math.round((durationSeconds / 60) * Number(session.price_per_minute) * 100) / 100;
+  const { data: providerPricing } = await supabase
+    .from("provider_profiles")
+    .select("minimum_minutes")
+    .eq("user_id", session.provider_id)
+    .maybeSingle();
+  const minimumMinutes = Math.max(1, Number(providerPricing?.minimum_minutes ?? 1));
+  const billedMinutes = Math.max(minimumMinutes, Math.ceil(durationSeconds / 60));
+  const subtotal = Math.round(billedMinutes * Number(session.price_per_minute) * 100) / 100;
 
   const { data: updated, error } = await supabase
     .from("communication_sessions")
@@ -62,7 +69,7 @@ export async function POST(request: Request) {
       session_id: sessionId,
       event_type: "ended",
       actor_id: user.id,
-      payload: { durationSeconds, subtotal },
+      payload: { durationSeconds, billedMinutes, subtotal },
     });
 
   return NextResponse.json({ session: updated });
